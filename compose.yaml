@@ -1,9 +1,12 @@
 services:
   mongodb:
-    build: .
+    build:
+      context: .                # Contexte = dossier contenant Dockerfile, entrypoint, etc.
+      dockerfile: Dockerfile    # (optionnel si c’est déjà le nom “Dockerfile”)
     container_name: mongodb
     ports:
-      - "27017:27017"
+      - "27017:27017"           # MongoDB
+      - "3307:3307"             # BI Connector (mongosqld)
     volumes:
       - mongodb_data:/data/db
     environment:
