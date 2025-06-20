@@ -9,6 +9,8 @@ services:
       - "3307:3307"
     volumes:
       - mongodb_data:/data/db
+      - ./requetes:/scripts  
+
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
