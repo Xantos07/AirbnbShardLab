@@ -8,7 +8,6 @@ printjson(db.utilisateurs.findOne());
 
 print("\n ---- Nombre d’annonces par type de location ---- ");
 
-//aggregate est comme le 	SELECT ... GROUP BY ..., HAVING, JOIN, etc.
 db.utilisateurs.aggregate([
     {$group: {_id:"$room_type", count:{$sum: 1}}}
 ]).forEach(doc => printjson(doc));
@@ -16,14 +15,9 @@ db.utilisateurs.aggregate([
 print("\n ---- Top 5 annonces avec le plus d’évaluations ---- ");
 
 db.utilisateurs.find(
-    //mon filtre comme le where en sql
     { number_of_reviews: { $exists: true } },
-    // ma projection comme le select ( la 1 permet d'afficher la varaible contrairement au 0 qui cache)
     { name: 1, number_of_reviews: 1, _id: 0 }
 ).sort({ number_of_reviews: -1 }).limit(5).forEach(doc => printjson(doc));
-
-//{ $sort: { count: 1 } } // croissant
-//limit 5
 
 print("\n ---- Nombre total d’hôtes différents ---- ");
 
@@ -40,10 +34,6 @@ const total_count = db.utilisateurs.countDocuments();
 print("réservables instantanement :", instant_bookable);
 print("proportion : ", ((instant_bookable/total_count) * 100).toFixed(2) + "%")
 
-
-//Est-ce que des hôtes ont plus de 100 annonces sur les plateformes ?
-// Et si oui qui sont-ils ? Cela représente quel pourcentage des hôtes ?
-// Combien y a-t-il de super hôtes différents ? Cela représente quel pourcentage des hôtes ?
 print("\n ---- Hôtes ayant plus de 100 annonces et sa proportion ---- ");
 
 const bigHosts = db.utilisateurs.aggregate([

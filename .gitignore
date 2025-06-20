@@ -1,4 +1,4 @@
-.env
+#.env // personnaliser le env
 .git
 .idea
 data/Listings_Paris.csv
