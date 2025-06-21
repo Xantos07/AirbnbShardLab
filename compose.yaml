@@ -9,11 +9,17 @@ services:
       - "3307:3307"
     volumes:
       - mongodb_data:/data/db
-      - ./requetes:/scripts  
-
+      - ./requetes:/scripts
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    networks:
+      - airbnb-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   mongo-express:
     image: mongo-express
@@ -21,41 +27,64 @@ services:
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/"
-      ME_CONFIG_MONGODB_AUTH_DATABASE: "admin"
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_AUTH_DATABASE: admin
       ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
       ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+    networks:
+      - airbnb-network
 
   data-import:
     build: ./data_import
     container_name: data-import
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env
+    networks:
+      - airbnb-network
+
+  mongo-queries:
+    image: mongo:6.0
+    container_name: mongo-queries
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./requetes:/scripts
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    entrypoint: ["mongosh", "--host", "mongodb", "-u", "${MONGO_INITDB_ROOT_USERNAME}", "-p", "${MONGO_INITDB_ROOT_PASSWORD}", "--authenticationDatabase", "admin", "/scripts/requetes.js"]
+    networks:
+      - airbnb-network
 
   analysis:
     build: ./analysis
     container_name: analysis
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     volumes:
-    - ./requetes:/scripts
-  mongo-queries:
-    image: mongo:6
-    container_name: mongo-queries
-    depends_on:
-      - mongodb
-    volumes:
       - ./requetes:/scripts
-    entrypoint: ["mongosh", "--host", "mongodb", "-u", "root", "-p", "secret", "--authenticationDatabase", "admin", "/scripts/requetes.js"]
+    networks:
+      - airbnb-network
 
 volumes:
   mongodb_data:
     driver: local
+
+networks:
+  airbnb-network:
+    driver: bridge
