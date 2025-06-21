@@ -1,5 +1,5 @@
 #.env // personnaliser le env
 .git
 .idea
-data/Listings_Paris.csv
-data/Listings_Lyon.csv
+#data/Listings_Paris.csv
+#data/Listings_Lyon.csv
