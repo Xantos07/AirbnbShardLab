@@ -1,19 +1,123 @@
 services:
-  mongodb:
+  # Primary MongoDB
+  mongodb-primary:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: mongodb
+    container_name: mongodb-primary
     ports:
       - "27017:27017"
       - "3307:3307"
     volumes:
-      - mongodb_data:/data/db
-      - ./requetes:/scripts  
-
+      - mongodb_primary_data:/data/db
+      - mongodb_keyfile:/data/keyfile
+      - ./requetes:/scripts
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_REPLICA_SET_NAME: rs0
+      MONGO_REPLICA_HOST: mongodb-primary
+    networks:
+      - airbnb-network
+
+  # Secondary 1
+  mongodb-secondary1:
+    image: mongo:6.0
+    container_name: mongodb-secondary1
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb_secondary1_data:/data/db
+      - mongodb_keyfile:/data/keyfile
+    environment:
+      MONGO_REPLICA_SET_NAME: rs0
+    entrypoint: |
+      bash -c "
+        # Créer le keyfile si il n'existe pas
+        if [ ! -f /data/keyfile/mongodb-keyfile ]; then
+          mkdir -p /data/keyfile
+          echo 'myReplicaSetKey123456789012345678901234567890' > /data/keyfile/mongodb-keyfile
+          chmod 600 /data/keyfile/mongodb-keyfile
+          chown mongodb:mongodb /data/keyfile/mongodb-keyfile
+        fi
+        
+        # Démarrer mongod avec replica set et keyfile
+        exec mongod --replSet rs0 --keyFile /data/keyfile/mongodb-keyfile --bind_ip_all
+      "
+    networks:
+      - airbnb-network
+
+  # Secondary 2
+  mongodb-secondary2:
+    image: mongo:6.0
+    container_name: mongodb-secondary2
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongodb_secondary2_data:/data/db
+      - mongodb_keyfile:/data/keyfile
+    environment:
+      MONGO_REPLICA_SET_NAME: rs0
+    entrypoint: |
+      bash -c "
+        # Créer le keyfile si il n'existe pas
+        if [ ! -f /data/keyfile/mongodb-keyfile ]; then
+          mkdir -p /data/keyfile
+          echo 'myReplicaSetKey123456789012345678901234567890' > /data/keyfile/mongodb-keyfile
+          chmod 600 /data/keyfile/mongodb-keyfile
+          chown mongodb:mongodb /data/keyfile/mongodb-keyfile
+        fi
+        
+        # Démarrer mongod avec replica set et keyfile
+        exec mongod --replSet rs0 --keyFile /data/keyfile/mongodb-keyfile --bind_ip_all
+      "
+    networks:
+      - airbnb-network
+
+  # Arbiter
+  mongodb-arbiter:
+    image: mongo:6.0
+    container_name: mongodb-arbiter
+    ports:
+      - "27020:27017"
+    volumes:
+      - mongodb_arbiter_data:/data/db
+      - mongodb_keyfile:/data/keyfile
+    environment:
+      MONGO_REPLICA_SET_NAME: rs0
+    entrypoint: |
+      bash -c "
+        # Créer le keyfile si il n'existe pas
+        if [ ! -f /data/keyfile/mongodb-keyfile ]; then
+          mkdir -p /data/keyfile
+          echo 'myReplicaSetKey123456789012345678901234567890' > /data/keyfile/mongodb-keyfile
+          chmod 600 /data/keyfile/mongodb-keyfile
+          chown mongodb:mongodb /data/keyfile/mongodb-keyfile
+        fi
+        
+        # Démarrer mongod avec replica set et keyfile
+        exec mongod --replSet rs0 --keyFile /data/keyfile/mongodb-keyfile --bind_ip_all
+      "
+    networks:
+      - airbnb-network
+
+  # Service d'initialisation du replica set
+  mongodb-setup:
+    image: mongo:6.0
+    container_name: mongodb-setup
+    depends_on:
+      - mongodb-primary
+      - mongodb-secondary1
+      - mongodb-secondary2
+      - mongodb-arbiter
+    volumes:
+      - ./scripts:/scripts
+    networks:
+      - airbnb-network
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    command: ["bash", "/scripts/init-replica-set.sh"]
 
   mongo-express:
     image: mongo-express
@@ -21,41 +125,76 @@ services:
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/"
-      ME_CONFIG_MONGODB_AUTH_DATABASE: "admin"
+      ME_CONFIG_MONGODB_SERVER: mongodb-primary
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_AUTH_DATABASE: admin
       ME_CONFIG_BASICAUTH_USERNAME: ${ME_CONFIG_BASICAUTH_USERNAME}
       ME_CONFIG_BASICAUTH_PASSWORD: ${ME_CONFIG_BASICAUTH_PASSWORD}
     depends_on:
-      - mongodb
+      - mongodb-setup
+    networks:
+      - airbnb-network
 
   data-import:
     build: ./data_import
     container_name: data-import
     depends_on:
-      - mongodb
+      - mongodb-setup
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env
+    networks:
+      - airbnb-network
+
+  mongo-queries:
+    image: mongo:6.0
+    container_name: mongo-queries
+    depends_on:
+      - mongodb-setup
+    volumes:
+      - ./requetes:/scripts
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    entrypoint: |
+      bash -c "
+        echo 'Attente des services MongoDB...'
+        sleep 20
+        
+        echo 'Exécution des requêtes MongoDB...'
+        mongosh --host mongodb-primary:27017 --username \${MONGO_INITDB_ROOT_USERNAME} --password \${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --file /scripts/requetes.js
+      "
+    networks:
+      - airbnb-network
 
   analysis:
     build: ./analysis
     container_name: analysis
     depends_on:
-      - mongodb
+      - mongodb-setup
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
-    volumes:
-    - ./requetes:/scripts
-  mongo-queries:
-    image: mongo:6
-    container_name: mongo-queries
-    depends_on:
-      - mongodb
+      MONGODB_HOST: mongodb-primary
     volumes:
       - ./requetes:/scripts
-    entrypoint: ["mongosh", "--host", "mongodb", "-u", "root", "-p", "secret", "--authenticationDatabase", "admin", "/scripts/requetes.js"]
+    networks:
+      - airbnb-network
 
 volumes:
-  mongodb_data:
+  mongodb_primary_data:
     driver: local
+  mongodb_secondary1_data:
+    driver: local
+  mongodb_secondary2_data:
+    driver: local
+  mongodb_arbiter_data:
+    driver: local
+  mongodb_keyfile:
+    driver: local
+
+networks:
+  airbnb-network:
+    driver: bridge
